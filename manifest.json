@@ -1,0 +1,190 @@
+{
+  "id": "universe",
+  "name": "Universe",
+  "description": "Sealed, disposable Docker sandboxes for AI agents: no network, no access to your machine.",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "minVide": "0.3.0",
+  "renderer": "renderer.js",
+  "main": "main.js",
+  "style": "style.css",
+  "icon": "assets/icon.svg",
+  "contributes": {
+    "sidebarPanel": {
+      "title": "Universe"
+    },
+    "settingsPage": {
+      "title": "Universe"
+    },
+    "commands": false,
+    "notifications": true,
+    "agentTools": true
+  },
+  "agentTools": {
+    "instructions": "Universe gives you sealed, disposable Docker sandboxes (\"universes\") to write and run code in. A universe has NO network access and NO access to the host machine: you cannot reach the internet, the user's files or other services, so installs (pip install, npm install, apt-get, git clone of a remote) will fail. Use what the image already ships (Python 3 with pytest/numpy/pandas, Node + npm, Go, git, build-essential, ripgrep, jq). Typical flow: universe_create (use from_project to copy the open project in, minus secrets and build output) -> universe_write_file / universe_exec -> if universe_exec returns a job_id, poll universe_job until it finishes -> read results with universe_read_file -> universe_destroy when done. Everything lives under /workspace; the rest of the filesystem is read-only apart from /tmp. Only the user can copy files out of a universe to the host.",
+    "tools": [
+      {
+        "name": "universe_create",
+        "description": "Create a new sealed sandbox container (no network, non-root, resource-limited) with an empty /workspace. With from_project=true the user's open project folder is copied in, skipping node_modules, .git, .env files, secrets and build/cache dirs. Returns what was created and what was skipped.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Universe name (lowercase letters, digits, dashes; max 30 chars)"
+            },
+            "from_project": {
+              "type": "boolean",
+              "description": "Copy the current project folder into /workspace (default false)"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      },
+      {
+        "name": "universe_list",
+        "description": "List existing universes with status, age and approximate workspace size.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      },
+      {
+        "name": "universe_write_file",
+        "description": "Write a text file inside a universe's /workspace (parent folders are created). Max 64 KB per call; set append=true to build larger files in chunks.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Universe name (lowercase letters, digits, dashes; max 30 chars)"
+            },
+            "path": {
+              "type": "string",
+              "description": "File path, relative to /workspace (or absolute under /workspace)"
+            },
+            "content": {
+              "type": "string",
+              "description": "File content"
+            },
+            "append": {
+              "type": "boolean",
+              "description": "Append instead of overwrite (default false)"
+            }
+          },
+          "required": [
+            "name",
+            "path",
+            "content"
+          ]
+        }
+      },
+      {
+        "name": "universe_read_file",
+        "description": "Read a text file from a universe's /workspace. Large files are truncated (the reply says so).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Universe name (lowercase letters, digits, dashes; max 30 chars)"
+            },
+            "path": {
+              "type": "string",
+              "description": "File path under /workspace"
+            }
+          },
+          "required": [
+            "name",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "universe_list_files",
+        "description": "List files and folders (two levels deep) under a path in a universe's /workspace.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Universe name (lowercase letters, digits, dashes; max 30 chars)"
+            },
+            "path": {
+              "type": "string",
+              "description": "Folder under /workspace (default: /workspace)"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      },
+      {
+        "name": "universe_exec",
+        "description": "Run a shell command (sh -lc, in /workspace, as a non-root user, no network) inside a universe. Waits up to about 40s: if the command finishes, returns the exit code and output (stdout and stderr merged, truncated). If still running it keeps running in the background and returns a job_id to poll with universe_job.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Universe name (lowercase letters, digits, dashes; max 30 chars)"
+            },
+            "command": {
+              "type": "string",
+              "description": "Shell command to run"
+            }
+          },
+          "required": [
+            "name",
+            "command"
+          ]
+        }
+      },
+      {
+        "name": "universe_job",
+        "description": "Check a background job started by universe_exec: running or finished, the exit code once finished, and the new output since the last poll. Optionally waits up to wait_seconds for it to finish.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Universe name (lowercase letters, digits, dashes; max 30 chars)"
+            },
+            "job_id": {
+              "type": "string",
+              "description": "The job_id returned by universe_exec"
+            },
+            "wait_seconds": {
+              "type": "number",
+              "description": "Wait up to this many seconds for the job to finish (0-40, default 0)"
+            }
+          },
+          "required": [
+            "name",
+            "job_id"
+          ]
+        }
+      },
+      {
+        "name": "universe_destroy",
+        "description": "Permanently delete a universe: its container and its /workspace volume. Do this when you are done.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Universe name (lowercase letters, digits, dashes; max 30 chars)"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      }
+    ]
+  }
+}
