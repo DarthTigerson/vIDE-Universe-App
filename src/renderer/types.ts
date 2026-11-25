@@ -14,3 +14,17 @@ export interface ActionResult {
   ok: boolean
   error?: string
 }
+
+// Background image pull (see src/main/imagePull.ts).
+export interface PullStatus {
+  image: string
+  state: 'idle' | 'pulling' | 'ready' | 'failed'
+  layersDone: number
+  layersTotal: number
+  error?: string
+}
+
+export interface ImageStatus {
+  present: boolean
+  pull: PullStatus
+}

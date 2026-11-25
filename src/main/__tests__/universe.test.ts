@@ -4,6 +4,7 @@ import {
   buildRunArgs,
   checkDockerStatus,
   createUniverse,
+  ensureImage,
   destroyUniverse,
   formatAge,
   formatBytes,
@@ -13,6 +14,10 @@ import {
   validateName,
   type Exec,
 } from '../universe'
+import { ImagePuller } from '../imagePull'
+
+// A puller whose `docker pull` is never expected to run (the image is present).
+const noPull = () => new ImagePuller(() => { throw new Error('unexpected pull') })
 
 const run = buildRunArgs('demo', DEFAULT_CONFIG, '2026-01-01T00:00:00.000Z')
 const has = (args: string[], flag: string, value?: string) => {
@@ -126,7 +131,7 @@ describe('parseUniverses', () => {
 describe('createUniverse / destroyUniverse', () => {
   it('creates the labelled volume, then runs the sealed container', async () => {
     const { exec, calls } = fakeExec((a) => (a[0] === 'ps' ? { stdout: '' } : {}))
-    await createUniverse(exec, 'demo', DEFAULT_CONFIG)
+    await createUniverse(exec, 'demo', DEFAULT_CONFIG, noPull())
     const names = calls.map((a) => a[0] + ' ' + (a[1] ?? ''))
     expect(names.indexOf('volume create')).toBeLessThan(names.indexOf('run -d'))
     const runArgs = calls.find((a) => a[0] === 'run')!
@@ -135,29 +140,50 @@ describe('createUniverse / destroyUniverse', () => {
 
   it('every docker call from create contains no privileged or host-mount flags', async () => {
     const { exec, calls } = fakeExec((a) => (a[0] === 'ps' ? { stdout: '' } : {}))
-    await createUniverse(exec, 'demo', DEFAULT_CONFIG)
+    await createUniverse(exec, 'demo', DEFAULT_CONFIG, noPull())
     expect(calls.flat().join(' ')).not.toMatch(/--privileged|--cap-add|docker\.sock|--network host|--pid host/)
   })
 
   it('refuses a duplicate name', async () => {
     const { exec } = fakeExec((a) => (a[0] === 'ps' ? { stdout: psLine('demo') } : {}))
-    await expect(createUniverse(exec, 'demo', DEFAULT_CONFIG)).rejects.toThrow(/already exists/)
+    await expect(createUniverse(exec, 'demo', DEFAULT_CONFIG, noPull())).rejects.toThrow(/already exists/)
   })
 
   it('refuses beyond the universe limit', async () => {
     const lines = Array.from({ length: 8 }, (_, i) => psLine(`u${i}`)).join('\n')
     const { exec } = fakeExec((a) => (a[0] === 'ps' ? { stdout: lines } : {}))
-    await expect(createUniverse(exec, 'extra', DEFAULT_CONFIG)).rejects.toThrow(/limit reached/)
+    await expect(createUniverse(exec, 'extra', DEFAULT_CONFIG, noPull())).rejects.toThrow(/limit reached/)
   })
 
   it('tells the user to build locally when the image cannot be pulled', async () => {
-    const { exec } = fakeExec((a) => (a[0] === 'ps' ? { stdout: '' } : a[0] === 'image' || a[0] === 'pull' ? { code: 1, stderr: 'nope' } : {}))
-    await expect(createUniverse(exec, 'demo', DEFAULT_CONFIG)).rejects.toThrow(/Build image locally/)
+    const { exec } = fakeExec((a) => (a[0] === 'ps' ? { stdout: '' } : a[0] === 'image' ? { code: 1, stderr: 'No such image' } : {}))
+    const puller = new ImagePuller((_b, _a, h) => { setTimeout(() => { h.onStderr?.('denied'); h.onExit?.(1) }, 0); return { kill() {} } })
+    await expect(createUniverse(exec, 'demo', DEFAULT_CONFIG, puller)).rejects.toThrow(/denied.*Build image locally/)
+  })
+
+  it('leaves a slow pull running and tells the agent to retry, creating nothing', async () => {
+    const { exec, calls } = fakeExec((a) => (a[0] === 'ps' ? { stdout: '' } : a[0] === 'image' ? { code: 1, stderr: 'No such image' } : {}))
+    let killed = false
+    const spawned: string[][] = []
+    const puller = new ImagePuller((_b, a) => { spawned.push(a); return { kill() { killed = true } } })
+    await expect(ensureImage(exec, DEFAULT_CONFIG.image, puller, 10)).rejects.toThrow(/still downloading.*again in a minute/)
+    await expect(ensureImage(exec, DEFAULT_CONFIG.image, puller, 10)).rejects.toThrow(/still downloading/)
+    expect(spawned).toHaveLength(1)
+    expect(killed).toBe(false)
+    expect(calls.some((a) => a[0] === 'run' || a[0] === 'volume')).toBe(false)
+  })
+
+  it('creates once a background pull finishes within the wait', async () => {
+    let present = false
+    const { exec, calls } = fakeExec((a) => (a[0] === 'ps' ? { stdout: '' } : a[0] === 'image' ? (present ? {} : { code: 1, stderr: 'No such image' }) : {}))
+    const puller = new ImagePuller((_b, _a, h) => { setTimeout(() => { present = true; h.onExit?.(0) }, 5); return { kill() {} } })
+    await createUniverse(exec, 'demo', DEFAULT_CONFIG, puller)
+    expect(calls.some((a) => a[0] === 'run')).toBe(true)
   })
 
   it('removes the volume if the run fails', async () => {
     const { exec, calls } = fakeExec((a) => (a[0] === 'ps' ? { stdout: '' } : a[0] === 'run' ? { code: 1, stderr: 'boom' } : {}))
-    await expect(createUniverse(exec, 'demo', DEFAULT_CONFIG)).rejects.toThrow('boom')
+    await expect(createUniverse(exec, 'demo', DEFAULT_CONFIG, noPull())).rejects.toThrow('boom')
     expect(calls.some((a) => a[0] === 'volume' && a[1] === 'rm')).toBe(true)
   })
 

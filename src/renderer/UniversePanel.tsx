@@ -3,7 +3,7 @@ import { useUniverseStore } from './universeStore'
 import { Modal } from './ui'
 import { ButtonIcon, EXPORT_ICON, LAUNCH_ICON, RefreshIcon, TRASH_ICON, UniverseIcon } from './icons'
 import { getVide } from './vide'
-import type { Universe } from './types'
+import type { ImageStatus, PullStatus, Universe } from './types'
 
 const POLL_MS = 5000
 
@@ -144,6 +144,52 @@ function UniverseRow({ universe, onDestroy, onExport }: { universe: Universe; on
   )
 }
 
+// The sandbox image is a few hundred MB. Main pulls it in the background; this
+// shows the progress, or offers the download when it is missing.
+function ImageBanner({ pillButtonClass }: { pillButtonClass: string }) {
+  const [image, setImage] = useState<ImageStatus | null>(null)
+
+  useEffect(() => {
+    const vide = getVide()
+    const load = () => { void vide.app.call<ImageStatus>('imageStatus').then(setImage).catch(() => {}) }
+    load()
+    const interval = setInterval(() => { if (document.visibilityState === 'visible') load() }, POLL_MS)
+    const off = vide.app.on('image:pull', (p) => {
+      const pull = p as unknown as PullStatus
+      setImage((cur) => ({ present: pull.state === 'ready' || (cur?.present ?? false), pull }))
+      if (pull.state !== 'pulling') load()
+    })
+    return () => { clearInterval(interval); off() }
+  }, [])
+
+  if (!image || (image.present && image.pull.state !== 'pulling')) return null
+  const { pull } = image
+  if (pull.state === 'pulling') {
+    const pct = pull.layersTotal > 0 ? Math.round((pull.layersDone / pull.layersTotal) * 100) : 0
+    return (
+      <div className="flex flex-col gap-1.5 rounded-lg border border-border px-2.5 py-2">
+        <p className="text-xs text-fg-muted">
+          Downloading sandbox image{pull.layersTotal > 0 ? ` (${pull.layersDone} of ${pull.layersTotal} layers)` : ''}. First time only.
+        </p>
+        <div className="h-1 rounded bg-white/10 overflow-hidden">
+          <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.max(pct, 3)}%` }} />
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border px-2.5 py-2">
+      <p className="text-xs text-fg-muted leading-relaxed">
+        The sandbox image is not downloaded yet (about 350 MB). Agents can't create universes until it is.
+      </p>
+      {pull.state === 'failed' && <p className="text-xs text-red-400 break-words">{pull.error}</p>}
+      <button type="button" className={pillButtonClass} onClick={() => { void getVide().app.call('pullImage') }}>
+        Download image
+      </button>
+    </div>
+  )
+}
+
 export function UniversePanel() {
   const status = useUniverseStore((s) => s.status)
   const universes = useUniverseStore((s) => s.universes)
@@ -204,6 +250,7 @@ export function UniversePanel() {
             No universes yet. Agents create them with universe_create; each one is sealed: no network, no access to your files.
           </p>
         )}
+        {status === 'running' && <ImageBanner pillButtonClass={pillButtonClass} />}
         {error && <p className="text-xs text-red-400">{error}</p>}
         {status === 'running' && universes.length > 0 && (
           <ul className="flex flex-col gap-1.5">

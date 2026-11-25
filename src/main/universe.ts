@@ -6,6 +6,7 @@
 // file or from user-only settings, and buildRunArgs() takes no free-form
 // argument list, so there is nothing an agent could use to weaken the sandbox.
 import type { MainVideApi } from '../vide'
+import { describePull, type ImagePuller } from './imagePull'
 
 export type Exec = MainVideApi['process']['exec']
 type ExecOpts = { timeoutMs?: number; windowId?: number }
@@ -232,27 +233,45 @@ export async function requireRunning(exec: Exec, name: string): Promise<Universe
   return u
 }
 
-// Make sure the image exists locally; otherwise try a bounded pull.
-export async function ensureImage(exec: Exec, image: string): Promise<void> {
+// How long universe_create waits on a running pull before handing back to the
+// agent. Leaves room under vIDE's 60s tool limit for creating the container.
+export const PULL_WAIT_MS = 25000
+
+export async function hasImage(exec: Exec, image: string): Promise<boolean> {
   const have = await exec('docker', ['image', 'inspect', '--format', '{{.Id}}', image], { timeoutMs: 8000 })
   const down = dockerNotRunning(have)
   if (down) throw down
-  if (have.code === 0) return
-  const pull = await exec('docker', ['pull', image], { timeoutMs: 40000 })
-  if (pull.code === 0) return
+  return have.code === 0
+}
+
+// Make sure the image exists locally. A missing image is pulled in the
+// background; if that pull outlasts PULL_WAIT_MS the agent is told to retry
+// while it carries on, rather than the pull being killed and starting over.
+export async function ensureImage(exec: Exec, image: string, puller: ImagePuller, waitMs = PULL_WAIT_MS): Promise<void> {
+  if (await hasImage(exec, image)) return
+  const before = puller.status(image)
+  if (before.state !== 'pulling') puller.start(image)
+  const p = await puller.wait(image, waitMs)
+  if (p.state === 'ready' && (await hasImage(exec, image))) return
+  if (p.state === 'pulling') {
+    throw new UniverseError(
+      `The sandbox image "${image}" is still ${describePull(p)} (a few hundred MB, first time only). ` +
+        'Nothing was created. Call universe_create again in a minute.',
+    )
+  }
   throw new UniverseError(
-    `The sandbox image "${image}" is not available locally and could not be pulled` +
-      `${pull.timedOut ? ' (timed out)' : ''}. Ask the user to open Settings > Universe and click "Build image locally".`,
+    `The sandbox image "${image}" could not be pulled: ${p.error ?? 'unknown error'}. ` +
+      'Ask the user to check their connection, or open Settings > Universe and click "Build image locally".',
   )
 }
 
-export async function createUniverse(exec: Exec, name: string, config: UniverseConfig, windowId?: number): Promise<UniverseInfo> {
+export async function createUniverse(exec: Exec, name: string, config: UniverseConfig, puller: ImagePuller, windowId?: number): Promise<UniverseInfo> {
   const existing = await listUniverses(exec)
   if (existing.some((u) => u.name === name)) throw new UniverseError(`A universe named "${name}" already exists.`)
   if (existing.length >= MAX_UNIVERSES) {
     throw new UniverseError(`Universe limit reached (${MAX_UNIVERSES}). Destroy one you no longer need with universe_destroy.`)
   }
-  await ensureImage(exec, config.image)
+  await ensureImage(exec, config.image, puller)
   const createdIso = new Date().toISOString()
   await docker(exec, buildCreateVolumeArgs(name, createdIso), { timeoutMs: 15000, windowId })
   try {

@@ -7,6 +7,7 @@ import * as u from './universe'
 import { listFiles, readFile, writeFile } from './files'
 import { execCommand, jobStatus } from './jobs'
 import { copyProjectIn } from './project'
+import { ImagePuller } from './imagePull'
 
 type Handle = { kill(): void }
 
@@ -46,6 +47,12 @@ export function activate(vide: MainVideApi): void {
 
   // User-only settings, pushed by the renderer. No agent tool reads or writes them.
   let config = u.DEFAULT_CONFIG
+  // Image pulls run in the background; every window's panel hears their progress.
+  const puller = new ImagePuller((b, a, h, o) => vide.process.spawn(b, a, h, o), (p) => vide.app.emit('image:pull', p))
+  // Fetch the image as soon as settings arrive, so it is usually there before an agent asks.
+  const prefetch = () => {
+    void u.hasImage(exec, config.image).then((have) => { if (!have) puller.start(config.image) }).catch(() => {})
+  }
   // The open project folder per window, pushed by the renderer (ctx has only a windowId).
   const projects = new Map<number, string>()
   const projectFor = (windowId?: number): string | undefined => {
@@ -61,7 +68,7 @@ export function activate(vide: MainVideApi): void {
     const fromProject = args.from_project === true
     // Fail early, before creating anything, if the project can't be located.
     if (fromProject && !projectFor(windowId)) await copyProjectIn(exec, name, undefined)
-    const created = await u.createUniverse(exec, name, config, windowId)
+    const created = await u.createUniverse(exec, name, config, puller, windowId)
     let copied = ''
     if (fromProject) {
       try {
@@ -103,13 +110,18 @@ export function activate(vide: MainVideApi): void {
   stopTimer = () => clearInterval(timer)
 
   handle('status', () => u.checkDockerStatus(exec))
+  handle('imageStatus', async () => {
+    const present = await u.hasImage(exec, config.image).catch(() => false)
+    return { present, pull: puller.status(config.image) }
+  })
+  handle('pullImage', () => puller.start(config.image))
   handle('configure', (payload: { config?: Record<string, unknown>; projectRoot?: string | null }, ctx) => {
     if (payload?.config) config = u.sanitizeConfig(payload.config as never)
     if (payload && 'projectRoot' in payload) {
       if (payload.projectRoot) projects.set(ctx.windowId, payload.projectRoot)
       else projects.delete(ctx.windowId)
     }
-    if (payload?.config) cleanup()
+    if (payload?.config) { cleanup(); prefetch() }
     return config
   })
   handle('list', async () => {
@@ -161,7 +173,7 @@ export function activate(vide: MainVideApi): void {
       {
         onStdout: send,
         onStderr: send,
-        onExit: (code) => { building = null; vide.app.emit('build:done', { code: code ?? 1 }, { windowId }) },
+        onExit: (code) => { building = null; puller.forget(config.image); vide.app.emit('build:done', { code: code ?? 1 }, { windowId }) },
       },
       { windowId },
     )
