@@ -107,9 +107,18 @@ export interface RendererAppModule {
 }
 
 // ---- Main-side API (mirrors electron/apps/mainVideApi.ts) ----
+export type AgentToolHandler = (
+  args: Record<string, unknown>,
+  ctx: { windowId?: number }
+) => string | { text: string } | Promise<string | { text: string }>
+
 export interface MainVideApi {
   apiVersion: 1
   appId: string
+  agentTools: {
+    // Only names declared in the manifest's `agentTools` are accepted.
+    handle(name: string, fn: AgentToolHandler): () => void
+  }
   app: {
     handle(method: string, fn: (payload: any, ctx: { windowId: number }) => unknown | Promise<unknown>): () => void
     emit(event: string, payload?: unknown, opts?: { windowId?: number }): void
