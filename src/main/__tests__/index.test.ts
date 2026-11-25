@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { activate, sweepOldUniverses } from '../index'
+import { activate, removeSymlinks, sweepOldUniverses } from '../index'
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import manifest from '../../../manifest.json'
 import type { MainVideApi } from '../../vide'
 
@@ -89,5 +92,17 @@ describe('sweepOldUniverses', () => {
     expect(await sweepOldUniverses(exec, 7, now)).toEqual(['old'])
     expect(calls.some((a) => a[0] === 'rm' && a.includes('vide-universe-fresh'))).toBe(false)
     expect(await sweepOldUniverses(exec, 0, now)).toEqual([])
+  })
+})
+
+describe('removeSymlinks', () => {
+  it('deletes links at any depth and keeps real files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'universe-export-'))
+    mkdirSync(join(dir, 'sub'))
+    writeFileSync(join(dir, 'sub', 'real.txt'), 'x')
+    symlinkSync('/etc/hosts', join(dir, 'top-link'))
+    symlinkSync(join(dir, 'sub'), join(dir, 'sub', 'dir-link'))
+    expect(removeSymlinks(dir)).toBe(2)
+    expect(existsSync(join(dir, 'sub', 'real.txt'))).toBe(true)
   })
 })

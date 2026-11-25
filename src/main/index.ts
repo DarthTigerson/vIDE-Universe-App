@@ -1,6 +1,6 @@
 // main.js entry: registers the Universe agent tools (sealed Docker sandboxes)
 // and the handlers the panel and settings page call. Never imports electron.
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import type { MainVideApi } from '../vide'
 import * as u from './universe'
@@ -11,6 +11,19 @@ import { copyProjectIn } from './project'
 type Handle = { kill(): void }
 
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
+
+// Deletes every symlink under dir. An exported workspace is agent-written, and
+// a link it planted (to ~/.ssh, say) must not land on the host. Returns the count.
+export function removeSymlinks(dir: string): number {
+  let removed = 0
+  for (const entry of readdirSync(dir)) {
+    const p = join(dir, entry)
+    const st = lstatSync(p)
+    if (st.isSymbolicLink()) { unlinkSync(p); removed++ }
+    else if (st.isDirectory()) removed += removeSymlinks(p)
+  }
+  return removed
+}
 
 // Removes universes older than `days` (0 = never). Returns the names removed.
 export async function sweepOldUniverses(exec: u.Exec, days: number, now = Date.now()): Promise<string[]> {
@@ -131,6 +144,7 @@ export function activate(vide: MainVideApi): void {
     await u.requireRunning(exec, universe)
     mkdirSync(target, { recursive: true })
     await u.docker(exec, ['cp', `${u.containerName(universe)}:${u.WORKSPACE}/.`, target], { timeoutMs: 120000, windowId: ctx.windowId })
+    removeSymlinks(target)
   }))
 
   // Build the bundled Dockerfile (dist/image) and tag it under the configured image name.
