@@ -40,4 +40,4 @@ In a dev vIDE run **Load app from folder…** and pick `dist/`, then start a new
 
 ## Releasing
 
-Push a tag like `v0.1.0`. `release.yml` builds `universe-<version>.zip` and publishes a GitHub release; `image.yml` builds the multi-arch base image and pushes it to `ghcr.io/forebeacon/universe-base` (tags `<version>` and `latest`). Listing on the vSuite Store (`apps.json`, category `agent-tools`) comes after the first real release.
+Push a tag like `v0.1.0`. `release.yml` builds `universe-<version>.zip` and publishes a GitHub release; `image.yml` builds the multi-arch base image and pushes it to `ghcr.io/darthtigerson/universe-base` (tags `<version>` and `latest`). Listing on the vSuite Store (`apps.json`, category `agent-tools`) comes after the first real release.

@@ -34,7 +34,7 @@ Sidebar panel listing universes (status, age, size) with destroy per item and de
 
 ## Image
 
-Ship `image/Dockerfile`: Debian slim based, non-root user 1000, Python 3 + pip + venv, Node LTS + npm, Go, git, build-essential, pytest, numpy, pandas, ripgrep, jq, curl. Default image setting: `ghcr.io/forebeacon/universe-base:latest`; if not present locally and pull fails, tell the user to use "Build image locally" (which tags it under the configured name). A GitHub workflow builds and pushes the image to GHCR on release tags (not run). The app release workflow is copied from the Docker app, adapted.
+Ship `image/Dockerfile`: Debian slim based, non-root user 1000, Python 3 + pip + venv, Node LTS + npm, Go, git, build-essential, pytest, numpy, pandas, ripgrep, jq, curl. Default image setting: `ghcr.io/darthtigerson/universe-base:latest`; if not present locally and pull fails, tell the user to use "Build image locally" (which tags it under the configured name). A GitHub workflow builds and pushes the image to GHCR on release tags (not run). The app release workflow is copied from the Docker app, adapted.
 
 ## Tickets
 

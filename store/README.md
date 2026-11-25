@@ -21,6 +21,6 @@ Every universe is started with no network, a non-root user, all Linux capabiliti
 
 ## Needs
 
-Docker Desktop, Colima or OrbStack. The base image (`ghcr.io/forebeacon/universe-base`) is pulled the first time; if that is not possible, Settings › Universe has **Build image locally**.
+Docker Desktop, Colima or OrbStack. The base image (`ghcr.io/darthtigerson/universe-base`) is pulled the first time; if that is not possible, Settings › Universe has **Build image locally**.
 
 New agent sessions pick up the tools after you install the app.

@@ -6,7 +6,7 @@ import { getVide } from './vide'
 const KEYS = { image: 'image', cpus: 'cpus', memoryMb: 'memoryMb', pids: 'pids', cleanupDays: 'cleanupDays' } as const
 
 export const DEFAULTS = {
-  image: 'ghcr.io/forebeacon/universe-base:latest',
+  image: 'ghcr.io/darthtigerson/universe-base:latest',
   cpus: '2',
   memoryMb: '2048',
   pids: '256',

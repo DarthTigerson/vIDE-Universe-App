@@ -17,7 +17,7 @@ export const PREFIX = 'vide-universe-'
 export const WORKSPACE = '/workspace'
 export const MAX_UNIVERSES = 8
 
-export const DEFAULT_IMAGE = 'ghcr.io/forebeacon/universe-base:latest'
+export const DEFAULT_IMAGE = 'ghcr.io/darthtigerson/universe-base:latest'
 
 // User-only settings (set from the app's settings page, pushed to main by the
 // renderer). Agents have no tool that reads or writes them.
