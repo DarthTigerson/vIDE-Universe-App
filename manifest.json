@@ -160,7 +160,7 @@
             },
             "wait_seconds": {
               "type": "number",
-              "description": "Wait up to this many seconds for the job to finish (0-40, default 0)"
+              "description": "Wait up to this many seconds for the job to finish (0-38, default 0)"
             }
           },
           "required": [
